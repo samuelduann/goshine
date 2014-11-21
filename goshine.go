@@ -234,7 +234,5 @@ func (s *Goshine) GetResultSetMetadata() ([][]string, error) {
 		results = append(results, row)
 	}
 
-	fmt.Println(results)
-
 	return results, nil
 }

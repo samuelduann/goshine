@@ -3,9 +3,9 @@ package goshine
 import (
 	"errors"
 	"fmt"
+	"git.apache.org/thrift.git/lib/go/thrift"
 	"net"
 	"strconv"
-    "git.apache.org/thrift.git/lib/go/thrift"
 )
 
 type GS_STATUS int
@@ -51,6 +51,18 @@ type Goshine struct {
 	operationHandle *TOperationHandle
 	status          GS_STATUS
 }
+
+type GsFieldInfo struct {
+    Name    string
+    Type    string
+    Comment string
+}
+
+type GsResultSet struct {
+    Data    [][]string
+    Schema  []GsFieldInfo
+}
+
 
 func NewGoshine(host string, port int, username string, password string) *Goshine {
 	return &Goshine{host: host, port: port, username: username, password: password, status: GS_STATUS_DISCONNECTED}
@@ -176,7 +188,8 @@ func (s *Goshine) getValueStr(colval *TColumnValue) string {
 	return ""
 }
 
-func (s *Goshine) FetchAll(sql string) ([][]string, error) {
+
+func (s *Goshine) FetchAll(sql string) (*GsResultSet, error) {
 	if err := s.Execute(sql); err != nil {
 		return nil, err
 	}
@@ -199,14 +212,17 @@ func (s *Goshine) FetchAll(sql string) ([][]string, error) {
 			strval := s.getValueStr(col)
 			row = append(row, strval)
 		}
-		fmt.Println(row[0], row[1])
 		results = append(results, row)
 	}
 
-	return results, nil
+    meta, err := s.getResultSetMetadata()
+
+    resultSet := &GsResultSet{Data: results, Schema: meta}
+
+	return resultSet, nil
 }
 
-func (s *Goshine) GetResultSetMetadata() ([][]string, error) {
+func (s *Goshine) getResultSetMetadata() ([]GsFieldInfo, error) {
 	if s.operationHandle == nil {
 		return nil, errors.New("invalid OperationHandle, try make a query first")
 	}
@@ -224,13 +240,13 @@ func (s *Goshine) GetResultSetMetadata() ([][]string, error) {
 				ret.Status.ErrorCode, *ret.Status.ErrorMessage))
 	}
 
-	results := [][]string{}
+	results := []GsFieldInfo{}
 	for _, column := range ret.Schema.Columns {
 		typestr, ok := GS_TYPE_MAP[column.TypeDesc.Types[0].PrimitiveEntry.TypeA1.String()]
 		if !ok {
 			typestr = "UNKNOWN"
 		}
-		row := []string{column.ColumnName, typestr, *column.Comment}
+		row := GsFieldInfo{Name: column.ColumnName, Type: typestr, Comment: *column.Comment}
 		results = append(results, row)
 	}
 

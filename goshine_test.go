@@ -44,7 +44,5 @@ func Test_FetchAll(t *testing.T) {
 	}
 	fmt.Println(ret)
 
-	s.GetResultSetMetadata()
-
 	s.Close()
 }

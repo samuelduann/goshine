@@ -6,6 +6,7 @@ import (
 	"git.apache.org/thrift.git/lib/go/thrift"
 	"net"
 	"strconv"
+	"time"
 )
 
 type GS_STATUS int
@@ -46,6 +47,7 @@ type Goshine struct {
 	port            int
 	username        string
 	password        string
+	database        string
 	client          *TCLIServiceClient
 	session         *TSessionHandle
 	operationHandle *TOperationHandle
@@ -53,6 +55,22 @@ type Goshine struct {
 }
 
 type GsFieldInfo struct {
+	Name    string
+	Type    string
+	Comment string
+}
+
+type GsResultSet struct {
+	Data   [][]string
+	Schema []GsFieldInfo
+}
+
+func NewGoshine(host string, port int, username string, password string, database string) *Goshine {
+	return &Goshine{host: host, port: port, username: username, password: password, status: GS_STATUS_DISCONNECTED, database: database}
+}
+
+func (s *Goshine) GetStatus() GS_STATUS {
+	return s.status
     Name    string
     Type    string
     Comment string
@@ -70,7 +88,7 @@ func NewGoshine(host string, port int, username string, password string) *Goshin
 
 func (s *Goshine) Connect() error {
 	if s.status == GS_STATUS_CONNECTED {
-		return errors.New("already connected")
+		return nil
 	}
 	//init thrift transport
 	socket, err := thrift.NewTSocket(net.JoinHostPort(s.host, strconv.Itoa(s.port)))
@@ -95,8 +113,9 @@ func (s *Goshine) Connect() error {
 	ret, err := client.OpenSession(openSessionReq)
 	if err != nil {
 		errLog.Printf(
-			"error opening session to %s:%d err: %x msg: %s",
-			s.host, s.port, ret.Status.ErrorCode, *ret.Status.ErrorMessage)
+			"error opening session to %s:%d err: %+v",
+			s.host, s.port, err)
+		transport.Close()
 		return errors.New("open session failed")
 	}
 
@@ -107,23 +126,46 @@ func (s *Goshine) Connect() error {
 	return nil
 }
 
+func (s *Goshine) reConnect() error {
+	for i := 0; i < 3; i++ {
+		err := s.Connect()
+		if err == nil {
+			return nil
+		}
+		time.Sleep(10 * time.Second)
+	}
+	s.status = GS_STATUS_ERROR
+	return errors.New("error reconnecting")
+}
+
+func (s *Goshine) ensureConnected() {
+	sql := fmt.Sprintf("use %s", s.database)
+	err := s.execute(sql)
+	if err != nil {
+		s.Close()
+		if e := s.reConnect(); e != nil {
+			panic(fmt.Sprintf("lost connection with spark server: %s:%d\n", s.host, s.port))
+		}
+	}
+}
+
 func (s *Goshine) Close() error {
-	if s.status != GS_STATUS_CONNECTED {
+	if s.status == GS_STATUS_DISCONNECTED {
 		return nil
 	}
+
+	s.status = GS_STATUS_DISCONNECTED
 
 	closeSessionReq := NewTCloseSessionReq()
 	closeSessionReq.SessionHandle = s.session
 
 	ret, err := s.client.CloseSession(closeSessionReq)
 	if err != nil {
-		s.status = GS_STATUS_ERROR
 		return errors.New(fmt.Sprintf("close session fail, %s", err))
 	}
 	if ret.Status.StatusCode != TStatusCode_SUCCESS_STATUS {
-		s.status = GS_STATUS_ERROR
 		return errors.New(
-			fmt.Sprintf("close session fail, spark error: %x msg: %s",
+			fmt.Sprintf("close session fail, spark error: % msg: %s",
 				ret.Status.ErrorCode, *ret.Status.ErrorMessage))
 	}
 
@@ -132,6 +174,11 @@ func (s *Goshine) Close() error {
 }
 
 func (s *Goshine) Execute(sql string) error {
+	s.ensureConnected()
+	return s.execute(sql)
+}
+
+func (s *Goshine) execute(sql string) error {
 	query := NewTExecuteStatementReq()
 	query.SessionHandle = s.session
 	query.Statement = sql
@@ -143,8 +190,8 @@ func (s *Goshine) Execute(sql string) error {
 	}
 	if ret.Status.StatusCode != TStatusCode_SUCCESS_STATUS {
 		return errors.New(
-			fmt.Sprintf("close session fail, spark error: %x msg: %s",
-				ret.Status.ErrorCode, *ret.Status.ErrorMessage))
+			fmt.Sprintf("Execute fail, spark error: %d msg: %s",
+				*ret.Status.ErrorCode, *ret.Status.ErrorMessage))
 	}
 
 	s.operationHandle = ret.OperationHandle
@@ -188,7 +235,6 @@ func (s *Goshine) getValueStr(colval *TColumnValue) string {
 	return ""
 }
 
-
 func (s *Goshine) FetchAll(sql string) (*GsResultSet, error) {
 	if err := s.Execute(sql); err != nil {
 		return nil, err
@@ -218,11 +264,14 @@ func (s *Goshine) FetchAll(sql string) (*GsResultSet, error) {
     meta, err := s.getResultSetMetadata()
 
     resultSet := &GsResultSet{Data: results, Schema: meta}
-
 	return resultSet, nil
 }
 
 func (s *Goshine) getResultSetMetadata() ([]GsFieldInfo, error) {
+	if s.status != GS_STATUS_CONNECTED {
+		return nil, errors.New("not connected")
+	}
+
 	if s.operationHandle == nil {
 		return nil, errors.New("invalid OperationHandle, try make a query first")
 	}

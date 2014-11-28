@@ -71,19 +71,6 @@ func NewGoshine(host string, port int, username string, password string, databas
 
 func (s *Goshine) GetStatus() GS_STATUS {
 	return s.status
-    Name    string
-    Type    string
-    Comment string
-}
-
-type GsResultSet struct {
-    Data    [][]string
-    Schema  []GsFieldInfo
-}
-
-
-func NewGoshine(host string, port int, username string, password string) *Goshine {
-	return &Goshine{host: host, port: port, username: username, password: password, status: GS_STATUS_DISCONNECTED}
 }
 
 func (s *Goshine) Connect() error {
@@ -229,13 +216,22 @@ func (s *Goshine) getValueStr(colval *TColumnValue) string {
 	}
 
 	if colval.IsSetStringVal() {
-		return *colval.GetStringVal().Value
+		if colval.GetStringVal().Value == nil {
+			return ""
+		} else {
+			return *colval.GetStringVal().Value
+		}
 	}
 
 	return ""
 }
 
 func (s *Goshine) FetchAll(sql string) (*GsResultSet, error) {
+
+	if s.status != GS_STATUS_CONNECTED {
+		return nil, errors.New("not connected")
+	}
+
 	if err := s.Execute(sql); err != nil {
 		return nil, err
 	}
@@ -261,9 +257,10 @@ func (s *Goshine) FetchAll(sql string) (*GsResultSet, error) {
 		results = append(results, row)
 	}
 
-    meta, err := s.getResultSetMetadata()
+	meta, err := s.getResultSetMetadata()
 
-    resultSet := &GsResultSet{Data: results, Schema: meta}
+	resultSet := &GsResultSet{Data: results, Schema: meta}
+
 	return resultSet, nil
 }
 

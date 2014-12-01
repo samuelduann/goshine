@@ -1,4 +1,4 @@
 goshine
 =======
 
-a go client of spark-thriftserver
+a go client library of spark-thriftserver

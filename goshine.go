@@ -61,7 +61,7 @@ type GsFieldInfo struct {
 }
 
 type GsResultSet struct {
-	Data   [][]string
+	Data   [][]interface{}
 	Schema []GsFieldInfo
 }
 
@@ -186,7 +186,56 @@ func (s *Goshine) execute(sql string) error {
 	return nil
 }
 
-func (s *Goshine) getValueStr(colval *TColumnValue) string {
+func (s *Goshine) getValueStr(colval *TColumnValue) interface{} {
+
+	if colval.IsSetStringVal() {
+		if colval.GetStringVal().Value == nil {
+			return nil
+		} else {
+			return *colval.GetStringVal().Value
+		}
+	}
+
+	if colval.IsSetI32Val() {
+		if colval.GetI32Val().Value == nil {
+			return nil
+		} else {
+			return strconv.FormatInt(int64(*colval.GetI32Val().Value), 10)
+		}
+	}
+
+	if colval.IsSetI64Val() {
+		if colval.GetI64Val().Value == nil {
+			return nil
+		} else {
+			return strconv.FormatInt(int64(*colval.GetI64Val().Value), 10)
+		}
+	}
+
+	if colval.IsSetDoubleVal() {
+		if colval.GetDoubleVal().Value == nil {
+			return nil
+		} else {
+			return strconv.FormatFloat(*colval.GetDoubleVal().Value, 'f', -1, 64)
+		}
+	}
+
+	if colval.IsSetByteVal() {
+		if colval.GetByteVal().Value == nil {
+			return nil
+		} else {
+			return strconv.FormatInt(int64(*colval.GetByteVal().Value), 10)
+		}
+	}
+
+	if colval.IsSetI16Val() {
+		if colval.GetI16Val().Value == nil {
+			return nil
+		} else {
+			return strconv.FormatInt(int64(*colval.GetI16Val().Value), 10)
+		}
+	}
+
 	if colval.IsSetBoolVal() {
 		if *colval.GetBoolVal().Value == true {
 			return "True"
@@ -195,35 +244,7 @@ func (s *Goshine) getValueStr(colval *TColumnValue) string {
 		}
 	}
 
-	if colval.IsSetByteVal() {
-		return strconv.FormatInt(int64(*colval.GetByteVal().Value), 10)
-	}
-
-	if colval.IsSetI16Val() {
-		return strconv.FormatInt(int64(*colval.GetI16Val().Value), 10)
-	}
-
-	if colval.IsSetI32Val() {
-		return strconv.FormatInt(int64(*colval.GetI32Val().Value), 10)
-	}
-
-	if colval.IsSetI64Val() {
-		return strconv.FormatInt(int64(*colval.GetI64Val().Value), 10)
-	}
-
-	if colval.IsSetDoubleVal() {
-		return strconv.FormatFloat(*colval.GetDoubleVal().Value, 'f', -1, 64)
-	}
-
-	if colval.IsSetStringVal() {
-		if colval.GetStringVal().Value == nil {
-			return ""
-		} else {
-			return *colval.GetStringVal().Value
-		}
-	}
-
-	return ""
+	return nil
 }
 
 func (s *Goshine) FetchAll(sql string) (*GsResultSet, error) {
@@ -247,9 +268,9 @@ func (s *Goshine) FetchAll(sql string) (*GsResultSet, error) {
 			ret.Status.ErrorCode, ret.Status.ErrorMessage))
 	}
 
-	results := [][]string{}
+	var results [][]interface{} = make([][]interface{}, 0, 0)
 	for _, record := range ret.Results.Rows {
-		row := []string{}
+		var row []interface{} = make([]interface{}, 0, 0)
 		for _, col := range record.ColVals {
 			strval := s.getValueStr(col)
 			row = append(row, strval)

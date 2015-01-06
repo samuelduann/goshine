@@ -52,6 +52,7 @@ type Goshine struct {
 	session         *TSessionHandle
 	operationHandle *TOperationHandle
 	status          GS_STATUS
+	udfs            []string
 }
 
 type GsFieldInfo struct {
@@ -65,8 +66,16 @@ type GsResultSet struct {
 	Schema []GsFieldInfo
 }
 
-func NewGoshine(host string, port int, username string, password string, database string) *Goshine {
-	return &Goshine{host: host, port: port, username: username, password: password, status: GS_STATUS_DISCONNECTED, database: database}
+func NewGoshine(host string, port int, username string, password string, database string, udfs []string) *Goshine {
+	return &Goshine{
+		host:     host,
+		port:     port,
+		username: username,
+		password: password,
+		status:   GS_STATUS_DISCONNECTED,
+		database: database,
+		udfs:     udfs,
+	}
 }
 
 func (s *Goshine) GetStatus() GS_STATUS {
@@ -80,13 +89,13 @@ func (s *Goshine) Connect() error {
 	//init thrift transport
 	socket, err := thrift.NewTSocket(net.JoinHostPort(s.host, strconv.Itoa(s.port)))
 	if err != nil {
-		errLog.Printf("error resolving address: %s:%d err: %s\n", s.host, s.port, err)
+		errLog.Printf("error resolving address: %s:%d err: %+v\n", s.host, s.port, err)
 		return errors.New("address resolve failed")
 	}
 
 	transport := thrift.NewTBufferedTransport(socket, BUFFER_SIZE)
 	if err := transport.Open(); err != nil {
-		errLog.Printf("error connecting to %s:%d err: %s\n", s.host, s.port, err)
+		errLog.Printf("error connecting to %s:%d err: %+v\n", s.host, s.port, err)
 		return errors.New("connect failed")
 	}
 
@@ -109,6 +118,13 @@ func (s *Goshine) Connect() error {
 	s.session = ret.SessionHandle
 	s.client = client
 	s.status = GS_STATUS_CONNECTED
+
+	//load udfs
+	for _, udf := range s.udfs {
+		if err := s.execute(udf); err != nil {
+			errLog.Printf("error loading udf: %s err: %+v", udf, err)
+		}
+	}
 
 	return nil
 }
@@ -133,6 +149,8 @@ func (s *Goshine) ensureConnected() {
 		if e := s.reConnect(); e != nil {
 			panic(fmt.Sprintf("lost connection with spark server: %s:%d\n", s.host, s.port))
 		}
+	} else {
+		s.execute(sql)
 	}
 }
 
